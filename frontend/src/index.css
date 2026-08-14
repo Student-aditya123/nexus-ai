@@ -1,0 +1,173 @@
+/* @import 'tailwind.css'; */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * { box-sizing: border-box; }
+
+  html {
+    scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    @apply bg-nexus-bg text-nexus-text font-sans;
+    background-image: theme('backgroundImage.gradient-mesh');
+    background-attachment: fixed;
+  }
+
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { @apply bg-nexus-surface; }
+  ::-webkit-scrollbar-thumb { @apply bg-nexus-subtle rounded-full; }
+  ::-webkit-scrollbar-thumb:hover { @apply bg-nexus-accent; }
+
+  ::selection { @apply bg-nexus-accent-dim text-white; }
+}
+
+@layer components {
+  /* Glassmorphism cards */
+  .glass {
+    @apply bg-nexus-card/60 backdrop-blur-sm border border-nexus-border;
+  }
+
+  .glass-strong {
+    @apply bg-nexus-surface/80 backdrop-blur-md border border-nexus-border;
+  }
+
+  /* Glow effects */
+  .glow-accent {
+    box-shadow: 0 0 20px rgba(99, 102, 241, 0.35);
+  }
+
+  /* Input styles */
+  .nexus-input {
+    @apply w-full bg-nexus-surface border border-nexus-border rounded-xl px-4 py-3
+    text-nexus-text placeholder-nexus-muted
+    focus:outline-none focus:border-nexus-accent focus:ring-1 focus:ring-nexus-accent/50
+    transition-all duration-200;
+  }
+
+  /* Button variants */
+  .btn-primary {
+    @apply bg-nexus-accent hover:bg-nexus-accent-glow text-white font-medium
+    px-4 py-2.5 rounded-xl transition-all duration-200
+    hover:shadow-glow-sm active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-ghost {
+    @apply text-nexus-muted hover:text-nexus-text hover:bg-nexus-hover
+    px-3 py-2 rounded-lg transition-all duration-200;
+  }
+
+  .btn-danger {
+    @apply bg-nexus-rose/10 hover:bg-nexus-rose/20 text-nexus-rose border border-nexus-rose/30
+    px-4 py-2 rounded-xl transition-all duration-200;
+  }
+
+  /* Sidebar items */
+  .sidebar-item {
+    @apply flex items-center gap-3 px-3 py-2.5 rounded-xl text-nexus-muted
+    hover:text-nexus-text hover:bg-nexus-hover cursor-pointer
+    transition-all duration-150 text-sm font-medium;
+  }
+
+  .sidebar-item.active {
+    @apply bg-nexus-accent/10 text-nexus-accent border border-nexus-accent/20;
+  }
+
+  /* Chat messages */
+  .message-user {
+    @apply bg-nexus-accent/10 border border-nexus-accent/20 rounded-2xl rounded-tr-sm;
+  }
+
+  .message-assistant {
+    @apply bg-nexus-card border border-nexus-border rounded-2xl rounded-tl-sm;
+  }
+
+  /* Shimmer loading */
+  .shimmer {
+    background: linear-gradient(90deg, transparent, rgba(99,102,241,0.1), transparent);
+    background-size: 200% 100%;
+    @apply animate-shimmer;
+  }
+
+  /* Status badges */
+  .badge-success { @apply bg-nexus-emerald/10 text-nexus-emerald border border-nexus-emerald/20 text-xs px-2 py-0.5 rounded-full; }
+  .badge-warning { @apply bg-nexus-amber/10 text-nexus-amber border border-nexus-amber/20 text-xs px-2 py-0.5 rounded-full; }
+  .badge-error { @apply bg-nexus-rose/10 text-nexus-rose border border-nexus-rose/20 text-xs px-2 py-0.5 rounded-full; }
+  .badge-info { @apply bg-nexus-accent/10 text-nexus-accent border border-nexus-accent/20 text-xs px-2 py-0.5 rounded-full; }
+
+  /* Typing indicator */
+  .typing-dot {
+    @apply w-1.5 h-1.5 bg-nexus-accent rounded-full animate-typing;
+  }
+  .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+  .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+
+  /* Agent step */
+  .agent-step {
+    @apply glass rounded-xl p-4 border-l-2 border-nexus-accent space-y-2;
+  }
+}
+
+/* Markdown content styles */
+.prose-nexus {
+  @apply text-nexus-text leading-relaxed;
+}
+
+.prose-nexus h1, .prose-nexus h2, .prose-nexus h3 {
+  @apply font-display font-semibold text-white mt-4 mb-2;
+}
+
+.prose-nexus h1 { @apply text-xl; }
+.prose-nexus h2 { @apply text-lg; }
+.prose-nexus h3 { @apply text-base; }
+
+.prose-nexus p { @apply mb-3 last:mb-0; }
+
+.prose-nexus code {
+  @apply bg-nexus-surface border border-nexus-border rounded px-1.5 py-0.5
+  font-mono text-sm text-nexus-accent-glow;
+}
+
+.prose-nexus pre {
+  @apply bg-nexus-surface border border-nexus-border rounded-xl p-4 overflow-x-auto my-3;
+}
+
+.prose-nexus pre code {
+  @apply bg-transparent border-0 p-0 text-nexus-text;
+}
+
+.prose-nexus ul, .prose-nexus ol {
+  @apply pl-5 mb-3 space-y-1;
+}
+
+.prose-nexus ul { @apply list-disc; }
+.prose-nexus ol { @apply list-decimal; }
+
+.prose-nexus li { @apply text-nexus-text; }
+
+.prose-nexus blockquote {
+  @apply border-l-2 border-nexus-accent pl-4 italic text-nexus-muted my-3;
+}
+
+.prose-nexus table {
+  @apply w-full border-collapse my-3 text-sm;
+}
+
+.prose-nexus th {
+  @apply bg-nexus-surface border border-nexus-border px-3 py-2 text-left font-semibold;
+}
+
+.prose-nexus td {
+  @apply border border-nexus-border px-3 py-2;
+}
+
+.prose-nexus a {
+  @apply text-nexus-accent hover:text-nexus-accent-glow underline;
+}
+
+.prose-nexus strong { @apply text-white font-semibold; }
+.prose-nexus em { @apply italic text-nexus-text/90; }
