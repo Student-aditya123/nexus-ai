@@ -15,11 +15,14 @@ const logger = require('../utils/logger');
 exports.uploadDocument = asyncHandler(async (req, res) => {
   if (!req.file) throw new AppError('No file uploaded', 400);
 
-  const userId = req.user._id;
+  const userId = req.user?._id || req.user?.id;
+  if (!userId) throw new AppError('Unauthorized user', 401);
+
   const { file } = req;
 
-  // Check document quota
-  if (req.user.plan.documentsUsed >= req.user.plan.documentLimit) {
+  // Safely check document quota with fallbacks
+  const userPlan = req.user?.plan || { documentsUsed: 0, documentLimit: 100, type: 'free' };
+  if ((userPlan.documentsUsed || 0) >= (userPlan.documentLimit || 100)) {
     throw new AppError('Document limit reached. Please upgrade your plan.', 429);
   }
 
@@ -39,30 +42,36 @@ exports.uploadDocument = asyncHandler(async (req, res) => {
     fileSize: file.size,
     storage: {
       provider: process.env.AWS_ACCESS_KEY_ID ? 's3' : 'local',
-      url: file.location || `/uploads/${file.filename}`,
-      key: file.key || file.filename,
-      bucket: process.env.S3_BUCKET_NAME,
+      url: file.location || `/uploads/${file.filename || file.originalname}`,
+      key: file.key || file.filename || file.originalname,
+      bucket: process.env.S3_BUCKET_NAME || 'local',
     },
-    processing: { status: 'pending' },
+    processing: { status: 'pending', progress: 0 },
   });
 
   // Queue document processing job
   const queue = getDocumentQueue();
   if (queue) {
-    await queue.add('process-document', {
-      documentId: document._id.toString(),
-      userId: userId.toString(),
-      fileBuffer: file.buffer?.toString('base64'),
-      filename: file.originalname,
-      storageKey: file.key || file.filename,
-    }, {
-      attempts: 3,
-      backoff: { type: 'exponential', delay: 5000 },
-      priority: req.user.plan.type === 'free' ? 2 : 1,
-    });
+    await queue.add(
+      'process-document',
+      {
+        documentId: document._id.toString(),
+        userId: userId.toString(),
+        fileBuffer: file.buffer?.toString('base64'),
+        filename: file.originalname,
+        storageKey: file.key || file.filename,
+      },
+      {
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 5000 },
+        priority: userPlan.type === 'free' ? 2 : 1,
+      }
+    );
   } else {
-    // Process synchronously in development
-    await _processDocumentSync(document, file.buffer, file.originalname, userId);
+    // Process synchronously in development fallback
+    _processDocumentSync(document, file.buffer, file.originalname, userId).catch((err) => {
+      logger.error(`Sync background processing error for doc ${document._id}:`, err);
+    });
   }
 
   logger.info(`Document uploaded: ${file.originalname} by ${userId}`);
@@ -81,10 +90,21 @@ exports.uploadDocument = asyncHandler(async (req, res) => {
 });
 
 exports.getDocuments = asyncHandler(async (req, res) => {
-  const { page = 1, limit = 20, status, fileType, search } = req.query;
-  const userId = req.user._id;
+  const userId = req.user?._id || req.user?.id;
+  if (!userId) throw new AppError('Unauthorized: User missing', 401);
 
-  const filter = { userId };
+  // Safely parse integers for pagination
+  const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+  const limit = Math.max(1, parseInt(req.query.limit, 10) || 20);
+  const skip = (page - 1) * limit;
+
+  const { status, fileType, search } = req.query;
+
+  // Query matching both 'userId' and 'user' fields to prevent schema mismatches
+  const filter = {
+    $or: [{ userId: userId }, { user: userId }],
+  };
+
   if (status) filter['processing.status'] = status;
   if (fileType) filter.fileType = fileType;
   if (search) filter.originalName = { $regex: search, $options: 'i' };
@@ -92,8 +112,8 @@ exports.getDocuments = asyncHandler(async (req, res) => {
   const [documents, total] = await Promise.all([
     Document.find(filter)
       .sort({ createdAt: -1 })
-      .skip((page - 1) * limit)
-      .limit(parseInt(limit))
+      .skip(skip)
+      .limit(limit)
       .select('-content.chunks')
       .lean(),
     Document.countDocuments(filter),
@@ -103,18 +123,19 @@ exports.getDocuments = asyncHandler(async (req, res) => {
     success: true,
     data: documents,
     pagination: {
-      page: parseInt(page),
-      limit: parseInt(limit),
+      page,
+      limit,
       total,
-      pages: Math.ceil(total / limit),
+      pages: Math.ceil(total / limit) || 1,
     },
   });
 });
 
 exports.getDocument = asyncHandler(async (req, res) => {
+  const userId = req.user?._id || req.user?.id;
   const document = await Document.findOne({
     _id: req.params.documentId,
-    $or: [{ userId: req.user._id }, { sharedWith: req.user._id }],
+    $or: [{ userId }, { user: userId }, { sharedWith: userId }],
   });
 
   if (!document) throw new AppError('Document not found', 404);
@@ -123,17 +144,21 @@ exports.getDocument = asyncHandler(async (req, res) => {
 });
 
 exports.deleteDocument = asyncHandler(async (req, res) => {
+  const userId = req.user?._id || req.user?.id;
+
   const document = await Document.findOneAndDelete({
     _id: req.params.documentId,
-    userId: req.user._id,
+    $or: [{ userId }, { user: userId }],
   });
 
   if (!document) throw new AppError('Document not found', 404);
 
-  // Delete from vector store
-  await vectorStore.deleteDocument(document._id.toString(), req.user._id.toString());
-
-  // TODO: Delete from S3
+  // Safely attempt vector store cleanup without crashing the request if vectors are missing
+  try {
+    await vectorStore.deleteDocument(document._id.toString(), userId.toString());
+  } catch (error) {
+    logger.warn(`Pinecone vector deletion skipped or failed for ${document._id}: ${error.message}`);
+  }
 
   logger.info(`Document deleted: ${document.originalName}`);
 
@@ -141,28 +166,27 @@ exports.deleteDocument = asyncHandler(async (req, res) => {
 });
 
 exports.queryDocument = asyncHandler(async (req, res) => {
+  const userId = req.user?._id || req.user?.id;
   const { query, topK = 5 } = req.body;
   const { documentId } = req.params;
 
   const document = await Document.findOne({
     _id: documentId,
-    $or: [{ userId: req.user._id }, { sharedWith: req.user._id }],
+    $or: [{ userId }, { user: userId }, { sharedWith: userId }],
   });
 
   if (!document) throw new AppError('Document not found', 404);
   if (!document.vectorized) throw new AppError('Document is still being processed', 202);
 
-  const chunks = await vectorStore.search(query, req.user._id.toString(), {
+  const chunks = await vectorStore.search(query, userId.toString(), {
     topK,
     documentIds: [documentId],
   });
 
-  const answer = await require('../services/ai/groq.service').ragComplete(
-    query,
-    chunks,
-    []
-  );
+  const groqService = require('../services/ai/groq.service');
+  const answer = await groqService.ragComplete(query, chunks, []);
 
+  document.stats = document.stats || { queryCount: 0 };
   document.stats.queryCount += 1;
   document.stats.lastQueried = new Date();
   await document.save();
@@ -170,20 +194,21 @@ exports.queryDocument = asyncHandler(async (req, res) => {
   res.json({
     success: true,
     data: {
-      answer: answer.content,
-      sources: chunks.map(c => ({
-        page: c.metadata.page,
-        excerpt: c.text.slice(0, 300),
-        score: c.score,
+      answer: answer?.content || answer,
+      sources: (chunks || []).map((c) => ({
+        page: c.metadata?.page || 1,
+        excerpt: (c.text || c.pageContent || '').slice(0, 300),
+        score: c.score || 0,
       })),
     },
   });
 });
 
 exports.getDocumentStatus = asyncHandler(async (req, res) => {
+  const userId = req.user?._id || req.user?.id;
   const document = await Document.findOne({
     _id: req.params.documentId,
-    userId: req.user._id,
+    $or: [{ userId }, { user: userId }],
   }).select('processing originalName vectorized');
 
   if (!document) throw new AppError('Document not found', 404);
@@ -191,15 +216,15 @@ exports.getDocumentStatus = asyncHandler(async (req, res) => {
   res.json({
     success: true,
     data: {
-      status: document.processing.status,
-      progress: document.processing.progress,
-      vectorized: document.vectorized,
-      error: document.processing.error,
+      status: document.processing?.status || 'pending',
+      progress: document.processing?.progress || 0,
+      vectorized: !!document.vectorized,
+      error: document.processing?.error || null,
     },
   });
 });
 
-// ─── Internal Processing ──────────────────────────────────────────────────────
+// ─── Internal Sync Processing ──────────────────────────────────────────────────
 
 async function _processDocumentSync(document, buffer, filename, userId) {
   try {
@@ -219,18 +244,14 @@ async function _processDocumentSync(document, buffer, filename, userId) {
 
     document.processing.progress = 70;
 
-    await vectorStore.upsertDocument(
-      document._id.toString(),
-      userId.toString(),
-      chunks
-    );
+    await vectorStore.upsertDocument(document._id.toString(), userId.toString(), chunks);
 
     document.processing.status = 'completed';
     document.processing.completedAt = new Date();
     document.processing.progress = 100;
     document.content = {
-      pageCount: metadata.pageCount,
-      wordCount: metadata.wordCount,
+      pageCount: metadata?.pageCount || 1,
+      wordCount: metadata?.wordCount || 0,
       chunkCount: chunks.length,
       preview: documentProcessor.generatePreview(pages),
     };
@@ -238,7 +259,6 @@ async function _processDocumentSync(document, buffer, filename, userId) {
     document.vectorCount = chunks.length;
 
     await document.save();
-
   } catch (error) {
     document.processing.status = 'failed';
     document.processing.error = error.message;

@@ -191,54 +191,68 @@ Reference previous conversations when relevant but don't overwhelm them with his
   /**
    * Generate embeddings (using OpenAI if Groq doesn't support)
    * Falls back to a simple TF-IDF representation
+   *//**
+   /**
+   * Generate embeddings using Google Gemini (text-embedding-004)
+   * Falls back to a 768-dimensional vector if Gemini API fails
+   */
+  /**
+   * Generate embeddings using Google Gemini (text-embedding-004)
+   */
+  /**
+   * Generate embeddings using Google Gemini (text-embedding-004)
    */
   async generateEmbedding(text) {
-    // Cache embeddings to reduce API calls
-    const cacheKey = `embedding:${Buffer.from(text.slice(0, 100)).toString('base64')}`;
-    const cached = await cache.get(cacheKey);
-    if (cached) return cached;
+    // 1. Validate and clean input text
+    const cleanedText = typeof text === 'string' ? text.trim() : String(text || '').trim();
+    if (!cleanedText) {
+      logger.warn('Skipping embedding generation: Input text is empty');
+      return this._fallbackEmbedding('');
+    }
 
     try {
-      // Use OpenAI for embeddings (Groq doesn't have embedding endpoint yet)
-      const { OpenAI } = require('openai');
-      const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+      const apiKey = process.env.GEMINI_API_KEY?.trim();
+      if (!apiKey) {
+        throw new Error('GEMINI_API_KEY is missing in environment variables');
+      }
 
-      const response = await openai.embeddings.create({
-        model: 'text-embedding-3-small',
-        input: text.slice(0, 8191), // Token limit
-      });
+      const { GoogleGenerativeAI } = require('@google/generative-ai');
+      const genAI = new GoogleGenerativeAI(apiKey);
+      const model = genAI.getGenerativeModel({ model: 'text-embedding-004' });
 
-      const embedding = response.data[0].embedding;
-      await cache.set(cacheKey, embedding, 86400); // Cache 24h
-      return embedding;
+      // 2. Truncate text to stay within Gemini token limits
+      const result = await model.embedContent(cleanedText.slice(0, 2048));
+
+      if (!result?.embedding?.values) {
+        throw new Error('Gemini API returned an invalid embedding payload');
+      }
+
+      return result.embedding.values;
 
     } catch (error) {
-      logger.warn('OpenAI embedding failed, using fallback:', error.message);
-      return this._fallbackEmbedding(text);
+      // 3. Detailed error logging to inspect failure root cause
+      logger.error('Gemini embedding failed:', error?.message || JSON.stringify(error));
+      // if (error?.status) logger.error(`Status code: ${error.status}`);
+      return this._fallbackEmbedding(cleanedText);
     }
   }
 
   /**
-   * Simple hash-based fallback embedding (not for production RAG)
+   * Fallback vector generator - STRICTLY produces 768 dimensions for Gemini/Pinecone compatibility
    */
   _fallbackEmbedding(text) {
-    const dim = 384;
-    const embedding = new Array(dim).fill(0);
-    const words = text.toLowerCase().split(/\s+/);
+    const dimensions = 768;
+    const vector = new Array(dimensions).fill(0);
 
-    words.forEach((word, i) => {
-      let hash = 0;
-      for (let j = 0; j < word.length; j++) {
-        hash = ((hash << 5) - hash) + word.charCodeAt(j);
-        hash |= 0;
-      }
-      const idx = Math.abs(hash) % dim;
-      embedding[idx] += 1 / Math.sqrt(words.length);
-    });
+    if (!text) return vector;
 
-    // Normalize
-    const magnitude = Math.sqrt(embedding.reduce((s, v) => s + v * v, 0));
-    return embedding.map(v => magnitude > 0 ? v / magnitude : 0);
+    for (let i = 0; i < text.length; i++) {
+      const charCode = text.charCodeAt(i);
+      const targetIndex = (charCode * (i + 1)) % dimensions;
+      vector[targetIndex] = (vector[targetIndex] + (charCode / 255)) % 1;
+    }
+
+    return vector;
   }
 
   /**

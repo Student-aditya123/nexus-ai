@@ -111,15 +111,23 @@ class VectorStore {
   async deleteDocument(documentId, userId) {
     if (!this.initialized) await this.initialize();
 
-    if (this.pineconeIndex) {
-      const namespace = `user_${userId}`;
-      // Pinecone delete by metadata filter
-      await this.pineconeIndex.namespace(namespace).deleteAll(); // In real impl, use filter
-    } else {
-      this.inMemoryStore.delete(documentId);
-    }
+    try {
+      if (this.pineconeIndex) {
+        const namespace = `user_${userId}`;
 
-    logger.info(`Deleted vectors for document ${documentId}`);
+        // Delete vectors matching only this documentId filter
+        await this.pineconeIndex.namespace(namespace).deleteMany({
+          documentId: documentId.toString(),
+        });
+
+        logger.info(`Deleted Pinecone vectors for document: ${documentId} (namespace: ${namespace})`);
+      } else if (this.inMemoryStore) {
+        this.inMemoryStore.delete(documentId);
+      }
+    } catch (error) {
+      // Gracefully log Pinecone 404 or missing vector errors without crashing the API
+      logger.warn(`Pinecone vector deletion skipped or failed for doc ${documentId}: ${error.message}`);
+    }
   }
 
   // ─── Private Methods ─────────────────────────────────────────────────────────

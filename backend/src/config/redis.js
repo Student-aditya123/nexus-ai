@@ -27,29 +27,42 @@ const REDIS_OPTIONS = {
   },
 };
 
+function createRedisInstance() {
+  // If REDIS_URL contains authentication (e.g. redis://:password@host:port), use it directly
+  if (process.env.REDIS_URL && process.env.REDIS_URL.includes('@')) {
+    return new Redis(process.env.REDIS_URL, REDIS_OPTIONS);
+  }
+
+  // Otherwise, explicitly pass host, port, and password options
+  return new Redis({
+    host: process.env.REDIS_HOST || 'localhost',
+    port: parseInt(process.env.REDIS_PORT, 10) || 6379,
+    password: process.env.REDIS_PASSWORD || undefined,
+    ...REDIS_OPTIONS,
+  });
+}
+
 async function connectRedis() {
   try {
-    const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
-    
-    redisClient = new Redis(redisUrl, {
-      ...REDIS_OPTIONS,
-      password: process.env.REDIS_PASSWORD || undefined,
-    });
+    redisClient = createRedisInstance();
+    redisSubscriber = createRedisInstance();
 
-    redisSubscriber = new Redis(redisUrl, {
-      ...REDIS_OPTIONS,
-      password: process.env.REDIS_PASSWORD || undefined,
-    });
+    // Attach error handlers BEFORE connecting to avoid unhandled error crashes
+    redisClient.on('error', (err) => logger.error('Redis Client Error:', err.message));
+    redisClient.on('reconnecting', () => logger.warn('Redis Client reconnecting...'));
 
-    await redisClient.connect();
+    redisSubscriber.on('error', (err) => logger.error('Redis Subscriber Error:', err.message));
+    redisSubscriber.on('reconnecting', () => logger.warn('Redis Subscriber reconnecting...'));
+
+    // Connect both client and subscriber
+    await Promise.all([
+      redisClient.connect(),
+      redisSubscriber.connect(),
+    ]);
+
     logger.info('✅ Redis Connected');
-
-    redisClient.on('error', (err) => logger.error('Redis Client Error:', err));
-    redisClient.on('reconnecting', () => logger.warn('Redis reconnecting...'));
-
   } catch (error) {
     logger.error('Redis connection failed:', error.message);
-    // Non-fatal: app can work without cache
     logger.warn('Application will run without caching');
   }
 }
@@ -99,8 +112,12 @@ const cache = {
 
   async invalidatePattern(pattern) {
     if (!redisClient) return;
-    const keys = await redisClient.keys(pattern);
-    if (keys.length) await redisClient.del(...keys);
+    try {
+      const keys = await redisClient.keys(pattern);
+      if (keys.length) await redisClient.del(...keys);
+    } catch (err) {
+      logger.error('Cache invalidatePattern error:', err);
+    }
   },
 };
 

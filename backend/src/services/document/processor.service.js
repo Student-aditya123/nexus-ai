@@ -64,10 +64,24 @@ class DocumentProcessor {
     const chunks = [];
 
     for (const page of pages) {
+      if (!page.text || !page.text.trim()) continue;
+
       const sentences = this._splitIntoSentences(page.text);
-      const pageChunks = this._createOverlappingChunks(sentences, page.pageNum);
+      let pageChunks = this._createOverlappingChunks(sentences, page.pageNum);
+
+      // Fallback: use full page text if overlapping chunking yielded zero chunks
+      if (pageChunks.length === 0) {
+        pageChunks = [{
+          text: page.text.trim(),
+          pageNum: page.pageNum,
+          charStart: 0,
+          charEnd: page.text.trim().length,
+        }];
+      }
 
       pageChunks.forEach(chunk => {
+        if (!chunk.text || !chunk.text.trim()) return;
+
         chunks.push({
           text: chunk.text,
           metadata: {
@@ -89,30 +103,33 @@ class DocumentProcessor {
 
   async _extractPDF(buffer, filename) {
     const pdfParse = require('pdf-parse');
+    const pageTexts = [];
 
     const data = await pdfParse(buffer, {
       pagerender: (pageData) => {
         return pageData.getTextContent().then((textContent) => {
-          return textContent.items.map(item => item.str).join(' ');
+          const text = textContent.items.map(item => item.str).join(' ');
+          pageTexts.push(text);
+          return text;
         });
       },
     });
 
-    // Parse per-page
     const pages = [];
-    const rawText = data.text;
-    const avgCharsPerPage = Math.ceil(rawText.length / (data.numpages || 1));
+    if (pageTexts.length > 0) {
+      pageTexts.forEach((text, i) => {
+        const cleaned = this._cleanText(text);
+        if (cleaned.length > 0) {
+          pages.push({ pageNum: i + 1, text: cleaned });
+        }
+      });
+    }
 
-    for (let i = 0; i < data.numpages; i++) {
-      const start = i * avgCharsPerPage;
-      const end = start + avgCharsPerPage;
-      const pageText = rawText.slice(start, end).trim();
-
-      if (pageText.length > 50) {
-        pages.push({
-          pageNum: i + 1,
-          text: this._cleanText(pageText),
-        });
+    // Fallback if pagerender yielded no separate page texts
+    if (pages.length === 0 && data.text) {
+      const cleaned = this._cleanText(data.text);
+      if (cleaned.length > 0) {
+        pages.push({ pageNum: 1, text: cleaned });
       }
     }
 
@@ -121,8 +138,8 @@ class DocumentProcessor {
       metadata: {
         filename,
         type: 'pdf',
-        pageCount: data.numpages,
-        wordCount: this._countWords(rawText),
+        pageCount: data.numpages || pages.length,
+        wordCount: this._countWords(data.text || ''),
         info: data.info,
       },
     };
@@ -134,9 +151,8 @@ class DocumentProcessor {
     const result = await mammoth.extractRawText({ buffer });
     const text = this._cleanText(result.value);
 
-    // Split by paragraphs/sections
-    const paragraphs = text.split(/\n{2,}/).filter(p => p.trim().length > 20);
-    const chunkSize = 3; // paragraphs per "page"
+    const paragraphs = text.split(/\n{2,}/).filter(p => p.trim().length > 0);
+    const chunkSize = 3;
 
     const pages = [];
     for (let i = 0; i < paragraphs.length; i += chunkSize) {
@@ -148,11 +164,11 @@ class DocumentProcessor {
     }
 
     return {
-      pages,
+      pages: pages.length ? pages : [{ pageNum: 1, text }],
       metadata: {
         filename,
         type: 'docx',
-        pageCount: pages.length,
+        pageCount: pages.length || 1,
         wordCount: this._countWords(text),
         messages: result.messages,
       },
@@ -160,8 +176,6 @@ class DocumentProcessor {
   }
 
   async _extractPPTX(buffer, filename) {
-    // Basic PPTX extraction - in production use officegen or libreoffice
-    // Parsing PPTX XML manually
     const AdmZip = require('adm-zip');
 
     try {
@@ -183,7 +197,7 @@ class DocumentProcessor {
           .replace(/\s+/g, ' ')
           .trim();
 
-        if (text.length > 10) {
+        if (text.length > 0) {
           pages.push({
             pageNum: i + 1,
             text: this._cleanText(text),
@@ -201,7 +215,6 @@ class DocumentProcessor {
         },
       };
     } catch (err) {
-      // Fallback: treat as text
       return this._extractText(buffer, filename);
     }
   }
@@ -224,7 +237,7 @@ class DocumentProcessor {
       metadata: {
         filename,
         type: 'text',
-        pageCount: pages.length,
+        pageCount: pages.length || 1,
         wordCount: this._countWords(text),
       },
     };
@@ -236,17 +249,20 @@ class DocumentProcessor {
     return text
       .replace(/\r\n/g, '\n')
       .replace(/\r/g, '\n')
-      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '') // Remove control chars
+      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')
       .replace(/\n{3,}/g, '\n\n')
-      .replace(/\s{3,}/g, '  ')
+      .replace(/\s{3,}/g, ' ')
       .trim();
   }
 
   _splitIntoSentences(text) {
-    return text
-      .split(/(?<=[.!?])\s+/)
+    if (!text) return [];
+    const items = text
+      .split(/(?<=[.!?])\s+|\n+/)
       .map(s => s.trim())
-      .filter(s => s.length > 10);
+      .filter(s => s.length > 0);
+
+    return items.length > 0 ? items : [text.trim()];
   }
 
   _createOverlappingChunks(sentences, pageNum) {
@@ -260,7 +276,7 @@ class DocumentProcessor {
     let chunkCharStart = 0;
 
     for (const sentence of sentences) {
-      const words = sentence.split(/\s+/);
+      const words = sentence.split(/\s+/).filter(Boolean);
 
       if (currentWordCount + words.length > wordsPerChunk && currentChunk.length > 0) {
         const text = currentChunk.join(' ');
@@ -271,17 +287,16 @@ class DocumentProcessor {
           charEnd: chunkCharStart + text.length,
         });
 
-        // Keep overlap
         const overlapSentences = [];
         let overlapCount = 0;
         for (let i = currentChunk.length - 1; i >= 0 && overlapCount < overlapWords; i--) {
-          const sentWords = currentChunk[i].split(/\s+/).length;
+          const sentWords = currentChunk[i].split(/\s+/).filter(Boolean).length;
           overlapCount += sentWords;
           overlapSentences.unshift(currentChunk[i]);
         }
 
         currentChunk = overlapSentences;
-        currentWordCount = overlapSentences.join(' ').split(/\s+/).length;
+        currentWordCount = overlapSentences.join(' ').split(/\s+/).filter(Boolean).length;
         chunkCharStart = charStart - overlapSentences.join(' ').length;
       }
 
@@ -307,9 +322,6 @@ class DocumentProcessor {
     return text.trim().split(/\s+/).filter(w => w.length > 0).length;
   }
 
-  /**
-   * Generate a quick preview/summary of document content
-   */
   generatePreview(pages, maxChars = 500) {
     const text = pages.slice(0, 3).map(p => p.text).join(' ');
     return text.slice(0, maxChars) + (text.length > maxChars ? '...' : '');

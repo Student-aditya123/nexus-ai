@@ -16,7 +16,7 @@ import SettingsPage from './pages/SettingsPage';
 import BillingPage from './pages/BillingPage';
 import AuthCallback from './pages/AuthCallback';
 
-// Auth guard
+// Auth store
 import { useAuthStore } from './stores/auth.store';
 
 const ProtectedRoute = ({ children }) => {
@@ -30,27 +30,38 @@ const PublicRoute = ({ children }) => {
 };
 
 function App() {
+  const { isAuthenticated } = useAuthStore();
+
   return (
     <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <Routes>
-        {/* Public */}
+        {/* Default Root Path */}
+        <Route
+          path="/"
+          element={<Navigate to={isAuthenticated ? "/chat" : "/login"} replace />}
+        />
+
+        {/* Public Auth Routes */}
         <Route path="/login" element={<PublicRoute><LoginPage /></PublicRoute>} />
         <Route path="/register" element={<PublicRoute><RegisterPage /></PublicRoute>} />
         <Route path="/auth/callback" element={<AuthCallback />} />
 
-        {/* Protected */}
-        <Route path="/" element={<ProtectedRoute><DashboardLayout /></ProtectedRoute>}>
-          <Route index element={<Navigate to="/chat" replace />} />
-          <Route path="chat" element={<ChatPage />} />
-          <Route path="chat/:sessionId" element={<ChatPage />} />
-          <Route path="documents" element={<DocumentsPage />} />
-          <Route path="agent" element={<AgentPage />} />
-          <Route path="analytics" element={<AnalyticsPage />} />
-          <Route path="settings" element={<SettingsPage />} />
-          <Route path="billing" element={<BillingPage />} />
+        {/* Protected Dashboard Routes */}
+        <Route element={<ProtectedRoute><DashboardLayout /></ProtectedRoute>}>
+          <Route path="/chat" element={<ChatPage />} />
+          <Route path="/chat/:sessionId" element={<ChatPage />} />
+          <Route path="/documents" element={<DocumentsPage />} />
+          <Route path="/agent" element={<AgentPage />} />
+          <Route path="/analytics" element={<AnalyticsPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/billing" element={<BillingPage />} />
         </Route>
 
-        <Route path="*" element={<Navigate to="/chat" replace />} />
+        {/* Wildcard Route */}
+        <Route
+          path="*"
+          element={<Navigate to={isAuthenticated ? "/chat" : "/login"} replace />}
+        />
       </Routes>
 
       <Toaster

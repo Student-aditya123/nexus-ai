@@ -1,10 +1,10 @@
 /**
  * NEXUS AI - Auth Store (Zustand)
- * Global auth state management with persistence
+ * Global auth state management with session persistence
  */
 
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { persist, createJSONStorage } from 'zustand/middleware';
 import api from '../services/api';
 import toast from 'react-hot-toast';
 
@@ -86,11 +86,17 @@ export const useAuthStore = create(
     }),
     {
       name: 'nexus-auth',
+      storage: createJSONStorage(() => sessionStorage),
       partialize: (state) => ({
         user: state.user,
         accessToken: state.accessToken,
         isAuthenticated: state.isAuthenticated,
       }),
+      onRehydrateStorage: () => (state) => {
+        if (state?.accessToken) {
+          api.defaults.headers.common['Authorization'] = `Bearer ${state.accessToken}`;
+        }
+      },
     }
   )
 );
