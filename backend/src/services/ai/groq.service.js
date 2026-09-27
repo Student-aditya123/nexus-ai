@@ -17,7 +17,7 @@ class GroqService {
       apiKey: process.env.GROQ_API_KEY,
     });
 
-    this.defaultModel = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+    this.defaultModel = process.env.GROQ_MODEL || 'openai/gpt-oss-120b';
     this.maxRetries = 3;
     this.retryDelay = 1000;
 
@@ -188,20 +188,7 @@ Reference previous conversations when relevant but don't overwhelm them with his
     });
   }
 
-  /**
-   * Generate embeddings (using OpenAI if Groq doesn't support)
-   * Falls back to a simple TF-IDF representation
-   *//**
-   /**
-   * Generate embeddings using Google Gemini (text-embedding-004)
-   * Falls back to a 768-dimensional vector if Gemini API fails
-   */
-  /**
-   * Generate embeddings using Google Gemini (text-embedding-004)
-   */
-  /**
-   * Generate embeddings using Google Gemini (text-embedding-004)
-   */
+  
   async generateEmbedding(text) {
     // 1. Validate and clean input text
     const cleanedText = typeof text === 'string' ? text.trim() : String(text || '').trim();
@@ -218,10 +205,19 @@ Reference previous conversations when relevant but don't overwhelm them with his
 
       const { GoogleGenerativeAI } = require('@google/generative-ai');
       const genAI = new GoogleGenerativeAI(apiKey);
-      const model = genAI.getGenerativeModel({ model: 'text-embedding-004' });
+      const model = genAI.getGenerativeModel({ model: 'gemini-embedding-001' });
 
       // 2. Truncate text to stay within Gemini token limits
-      const result = await model.embedContent(cleanedText.slice(0, 2048));
+      const result = await model.embedContent({
+         content: {
+            parts: [
+               {
+                  text:  cleanedText.slice(0, 2048)
+               }
+            ]
+         },
+         outputDimensionality: 768
+      });
 
       if (!result?.embedding?.values) {
         throw new Error('Gemini API returned an invalid embedding payload');

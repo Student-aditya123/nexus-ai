@@ -80,14 +80,27 @@ async function initializeQueues() {
       logger.info(`Job ${job.id} completed`);
     });
 
-    documentWorker.on('failed', async (job, err) => {
-      logger.error(`Job ${job.id} failed:`, err.message);
-      const { Document } = require('../models/index');
-      await Document.findByIdAndUpdate(job.data.documentId, {
-        'processing.status': 'failed',
-        'processing.error': err.message,
-      }).catch(() => {});
-    });
+     documentWorker.on('failed', async (job, err) => {
+         logger.error(`❌ Job ${job?.id} failed`);
+         logger.error(`Error name: ${err?.name || 'Unknown'}`);
+         logger.error(`Error message: ${err?.message || 'No error message'}`);
+         logger.error(`Error stack: ${err?.stack || 'No stack trace'}`);
+
+         const { Document } = require('../models/index');
+
+        try {
+            await Document.findByIdAndUpdate(job.data.documentId, {
+              'processing.status': 'failed',
+              'processing.error': err?.message || 'Document processing failed',
+           });
+         } catch (updateError) {
+                   logger.error(
+                        `Failed to update document status: ${
+                           updateError?.message || updateError
+                         }`
+                     );
+            }
+       });
 
     logger.info('✅ BullMQ Queues initialized');
 

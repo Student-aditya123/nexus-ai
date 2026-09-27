@@ -6,14 +6,29 @@
     "auditLog": "logs\\.997c9d25c153afcc1dde5c66cf04ddad925eaeaf-audit.json",
     "files": [
         {
-            "date": 1786647899837,
-            "name": "logs\\combined-2026-08-14.log",
-            "hash": "6e32a3ab68a350aac59b4eb0670938c787268fa16c0dbbc60e62251bbbc0d0a1"
+            "date": 1789927873203,
+            "name": "logs\\combined-2026-09-20.log",
+            "hash": "83a2bb06a0e296afe1482d9cdba846df7cd68328c63589fa179c04067c923da8"
         },
         {
-            "date": 1786867591098,
-            "name": "logs\\combined-2026-08-16.log",
-            "hash": "5973e12d90d3fbfcdb538ad0f7b327efd5c9d80d28dd9de8ee995b7fb0dc6cbb"
+            "date": 1789929560586,
+            "name": "logs\\combined-2026-09-21.log",
+            "hash": "0b90cea5501c52782948cbd77c6403b17fc6e7bce497ab8040bb46e006219fe3"
+        },
+        {
+            "date": 1790268273320,
+            "name": "logs\\combined-2026-09-24.log",
+            "hash": "56f1ba737f3bb147607bbeb6b9c1c0e6f493529021c32fd31ba21fa9a28e3403"
+        },
+        {
+            "date": 1790360707610,
+            "name": "logs\\combined-2026-09-25.log",
+            "hash": "dc755aea7c2270564615ddc21d690c63b75ca4a01f2281b8b6e37efcc717f900"
+        },
+        {
+            "date": 1790361011908,
+            "name": "logs\\combined-2026-09-26.log",
+            "hash": "a1fd8a3798ed0d993093a0280ad2065c841b5938e89e96e09fc8d70de78d6870"
         }
     ],
     "hashType": "sha256"

@@ -152,19 +152,39 @@ class VectorStore {
   }
 
   async _upsertToPinecone(userId, vectors) {
-    const namespace = `user_${userId}`;
-    const batchSize = 100;
+  const namespace = `user_${userId}`;
+  const batchSize = 100;
 
-    for (let i = 0; i < vectors.length; i += batchSize) {
-      const batch = vectors.slice(i, i + batchSize).map(v => ({
-        id: v.id,
-        values: v.embedding,
-        metadata: { ...v.metadata, text: v.text.slice(0, 1000) }, // Pinecone metadata limit
-      }));
-
-      await this.pineconeIndex.namespace(namespace).upsert(batch);
-    }
+  if (!Array.isArray(vectors) || vectors.length === 0) {
+    throw new Error('No vectors available for Pinecone upsert');
   }
+
+  for (let i = 0; i < vectors.length; i += batchSize) {
+    const batch = vectors.slice(i, i + batchSize).map(v => ({
+      id: v.id,
+      values: v.embedding,
+      metadata: {
+        ...v.metadata,
+        text: v.text.slice(0, 1000),
+      },
+    }));
+
+    if (batch.length === 0) {
+      throw new Error(`Pinecone batch is empty at index ${i}`);
+    }
+
+    // Pinecone SDK v7.1.0 requires { records: batch }
+    await this.pineconeIndex
+      .namespace(namespace)
+      .upsert({
+        records: batch,
+      });
+
+    logger.info(
+      `Pinecone upsert successful: ${batch.length} records`
+    );
+  }
+}
 
   _upsertToMemory(documentId, vectors) {
     this.inMemoryStore.set(documentId, vectors);
