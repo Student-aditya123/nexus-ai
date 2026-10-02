@@ -30,9 +30,10 @@ const REDIS_OPTIONS = {
 function createRedisInstance() {
   // If REDIS_URL contains authentication (e.g. redis://:password@host:port), use it directly
   if (process.env.REDIS_URL) {
+    logger.info('Redis: REDIS_URL detected, using hosted Redis');
     return new Redis(process.env.REDIS_URL, REDIS_OPTIONS);
   }
-
+ logger.warn('Redis: REDIS_URL NOT detected, using localhost fallback');
   // Otherwise, explicitly pass host, port, and password options
   return new Redis({
     host: process.env.REDIS_HOST || 'localhost',
