@@ -29,7 +29,7 @@ const REDIS_OPTIONS = {
 
 function createRedisInstance() {
   // If REDIS_URL contains authentication (e.g. redis://:password@host:port), use it directly
-  if (process.env.REDIS_URL && process.env.REDIS_URL.includes('@')) {
+  if (process.env.REDIS_URL) {
     return new Redis(process.env.REDIS_URL, REDIS_OPTIONS);
   }
 
