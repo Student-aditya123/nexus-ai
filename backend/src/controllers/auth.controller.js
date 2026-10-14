@@ -178,7 +178,7 @@ exports.logout = asyncHandler(async (req, res) => {
     await cache.set(`blacklist:${token}`, true, 900); // 15 min TTL
   }
 
-  logger.info(`User logged out: ${req.user.email}`);
+  logger.info(`User logged out: ${req.user?.email || 'unkown user'}`);
 
   res.json({ success: true, message: 'Logged out successfully' });
 });
