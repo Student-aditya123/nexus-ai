@@ -14,7 +14,8 @@ async function initializeQueues() {
   try {
     const { Queue, Worker } = require('bullmq');
     const { getRedisClient } = require('../config/redis');
-    const redis = getRedisClient();
+    // const redis = getRedisClient();
+    const Redis = require('ioredis');
 
     if (!redis) {
       logger.warn('Redis not available - queues disabled, using sync processing');
@@ -23,13 +24,15 @@ async function initializeQueues() {
 
     // const connection = { host: 'localhost', port: 6379 };
     const connection = process.env.REDIS_URL
-        ? { url: process.env.REDIS_URL, maxRetriesPerRequest: null }
-        : {
-             host: process.env.REDIS_HOST || 'localhost',
-             port: parseInt(process.env.REDIS_PORT, 10) || 6379,
-             password: process.env.REDIS_PASSWORD || undefined,
-             maxRetriesPerRequest: null,
-          };
+      ? new Redis(process.env.REDIS_URL, {
+          maxRetriesPerRequest: null,
+        })
+      : new Redis({
+          host: process.env.REDIS_HOST || 'localhost',
+          port: parseInt(process.env.REDIS_PORT, 10) || 6379,
+          password: process.env.REDIS_PASSWORD || undefined,
+          maxRetriesPerRequest: null,
+        });
 
     // Document processing queue
     documentQueue = new Queue('document-processing', { connection });
